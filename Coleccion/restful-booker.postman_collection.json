@@ -1,0 +1,1402 @@
+{
+  "info": {
+    "name": "Restful-Booker - Pruebas automatizadas (práctica QA)",
+    "description": "Colección de práctica sobre https://restful-booker.herokuapp.com. Incluye healthcheck, auth, flujo CRUD encadenado, casos negativos, casos de borde y limpieza. Correr en orden (Collection Runner o newman).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Validaciones comunes a TODOS los requests",
+          "pm.test('[común] Tiempo de respuesta < ' + pm.environment.get('maxResponseMs') + ' ms', function () {",
+          "pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get('maxResponseMs') || 3000));",
+          "});",
+          "pm.test('[común] No devuelve 5xx inesperado', function () {",
+          "// Los requests que esperan 500 a propósito marcan expect500=true en su pre-request",
+          "if (pm.environment.get('expect500') === 'true') { pm.environment.unset('expect500'); return; }",
+          "pm.expect(pm.response.code, 'status').to.be.below(500);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "00 - Healthcheck",
+      "item": [
+        {
+          "name": "TC-01 Ping - la API está viva",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ping",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ping"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01 - Autenticación",
+      "item": [
+        {
+          "name": "TC-02 Auth con credenciales válidas",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Devuelve un token no vacío', () => {",
+                  "    pm.expect(json).to.have.property('token');",
+                  "    pm.expect(json.token).to.be.a('string').and.not.empty;",
+                  "});",
+                  "// Encadenamiento: el token se usa en PUT/PATCH/DELETE",
+                  "pm.environment.set('token', json.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-03 Auth con password incorrecta (negativo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"incorrecta\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Nota QA: la API responde 200 con un \"reason\" en vez de 401. Se documenta como observación.",
+                  "pm.test('No devuelve token', () => pm.expect(pm.response.json()).to.not.have.property('token'));",
+                  "pm.test('Mensaje \"Bad credentials\"', () => pm.expect(pm.response.json().reason).to.eql('Bad credentials'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-04 Auth con body vacío (borde)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('No devuelve token', () => pm.expect(pm.response.json()).to.not.have.property('token'));",
+                  "pm.test('Mensaje \"Bad credentials\"', () => pm.expect(pm.response.json().reason).to.eql('Bad credentials'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 - Booking CRUD (flujo encadenado)",
+      "description": "Flujo E2E: crear → consultar → buscar → actualizar → actualizar parcial → borrar → verificar borrado. Cada paso usa el bookingid guardado por el anterior.",
+      "item": [
+        {
+          "name": "TC-05 Crear booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstname\": \"{{firstname}}\",\n  \"lastname\": \"{{lastname}}\",\n  \"totalprice\": {{totalprice}},\n  \"depositpaid\": true,\n  \"bookingdates\": {\n    \"checkin\": \"{{checkin}}\",\n    \"checkout\": \"{{checkout}}\"\n  },\n  \"additionalneeds\": \"Breakfast\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Datos de prueba dinámicos: cada corrida usa un nombre único",
+                  "const suffix = Date.now().toString().slice(-6);",
+                  "pm.environment.set('firstname', 'QA' + suffix);",
+                  "pm.environment.set('lastname', 'Tester');",
+                  "pm.environment.set('totalprice', 150);",
+                  "const today = new Date();",
+                  "const plus = (d) => new Date(today.getTime() + d * 86400000).toISOString().slice(0, 10);",
+                  "pm.environment.set('checkin', plus(10));",
+                  "pm.environment.set('checkout', plus(15));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Content-Type JSON', () => pm.response.to.have.header('Content-Type'));",
+                  "const json = pm.response.json();",
+                  "pm.test('Devuelve bookingid numérico', () => pm.expect(json.bookingid).to.be.a('number'));",
+                  "pm.test('El booking cumple el schema', () => pm.response.to.have.jsonSchema({",
+                  "    type: 'object', required: ['bookingid', 'booking'],",
+                  "    properties: { bookingid: { type: 'number' }, booking: {\"type\":\"object\",\"required\":[\"firstname\",\"lastname\",\"totalprice\",\"depositpaid\",\"bookingdates\"],\"properties\":{\"firstname\":{\"type\":\"string\"},\"lastname\":{\"type\":\"string\"},\"totalprice\":{\"type\":\"number\"},\"depositpaid\":{\"type\":\"boolean\"},\"bookingdates\":{\"type\":\"object\",\"required\":[\"checkin\",\"checkout\"],\"properties\":{\"checkin\":{\"type\":\"string\",\"pattern\":\"^\\\\d{4}-\\\\d{2}-\\\\d{2}$\"},\"checkout\":{\"type\":\"string\",\"pattern\":\"^\\\\d{4}-\\\\d{2}-\\\\d{2}$\"}}},\"additionalneeds\":{\"type\":\"string\"}}} }",
+                  "}));",
+                  "pm.test('Los datos guardados coinciden con los enviados', () => {",
+                  "    const b = json.booking;",
+                  "    pm.expect(b.firstname).to.eql(pm.environment.get('firstname'));",
+                  "    pm.expect(b.lastname).to.eql(pm.environment.get('lastname'));",
+                  "    pm.expect(b.totalprice).to.eql(Number(pm.environment.get('totalprice')));",
+                  "    pm.expect(b.bookingdates.checkin).to.eql(pm.environment.get('checkin'));",
+                  "    pm.expect(b.bookingdates.checkout).to.eql(pm.environment.get('checkout'));",
+                  "});",
+                  "pm.environment.set('bookingId', json.bookingid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-06 Obtener booking por id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{bookingId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Persistió con el nombre correcto', () => {",
+                  "    pm.expect(pm.response.json().firstname).to.eql(pm.environment.get('firstname'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-07 Buscar bookings por nombre (filtro)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking?firstname={{firstname}}&lastname={{lastname}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "query": [
+                {
+                  "key": "firstname",
+                  "value": "{{firstname}}"
+                },
+                {
+                  "key": "lastname",
+                  "value": "{{lastname}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const ids = pm.response.json().map(x => x.bookingid);",
+                  "pm.test('El resultado incluye el booking creado', () => {",
+                  "    pm.expect(ids).to.include(Number(pm.environment.get('bookingId')));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-08 Actualizar booking completo (PUT con token)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "token={{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{bookingId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstname\": \"{{firstname}}\",\n  \"lastname\": \"{{lastname}}\",\n  \"totalprice\": 999,\n  \"depositpaid\": true,\n  \"bookingdates\": {\n    \"checkin\": \"{{checkin}}\",\n    \"checkout\": \"{{checkout}}\"\n  },\n  \"additionalneeds\": \"Late checkout\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Se actualizaron los campos', () => {",
+                  "    pm.expect(b.totalprice).to.eql(999);",
+                  "    pm.expect(b.additionalneeds).to.eql('Late checkout');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-09 Actualización parcial (PATCH)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "token={{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{bookingId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstname\": \"{{firstname}}-edit\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Cambió solo el firstname', () => pm.expect(b.firstname).to.eql(pm.environment.get('firstname') + '-edit'));",
+                  "pm.test('El resto de los campos se mantiene (regresión del PUT)', () => {",
+                  "    pm.expect(b.totalprice).to.eql(999);",
+                  "    pm.expect(b.additionalneeds).to.eql('Late checkout');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-10 Eliminar booking",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "token={{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{bookingId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// La API devuelve 201 en el DELETE (no 200/204). Se documenta como observación.",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-11 Verificar que el booking ya no existe",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{bookingId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404 después del borrado', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 - Casos negativos",
+      "item": [
+        {
+          "name": "TC-12 GET de id inexistente",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "999999999"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-13 GET con id no numérico",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/abc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "abc"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-14 Crear booking de apoyo para negativos",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstname\": \"{{firstname}}\",\n  \"lastname\": \"{{lastname}}\",\n  \"totalprice\": {{totalprice}},\n  \"depositpaid\": true,\n  \"bookingdates\": {\n    \"checkin\": \"{{checkin}}\",\n    \"checkout\": \"{{checkout}}\"\n  },\n  \"additionalneeds\": \"Breakfast\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Datos de prueba dinámicos: cada corrida usa un nombre único",
+                  "const suffix = Date.now().toString().slice(-6);",
+                  "pm.environment.set('firstname', 'QA' + suffix);",
+                  "pm.environment.set('lastname', 'Tester');",
+                  "pm.environment.set('totalprice', 150);",
+                  "const today = new Date();",
+                  "const plus = (d) => new Date(today.getTime() + d * 86400000).toISOString().slice(0, 10);",
+                  "pm.environment.set('checkin', plus(10));",
+                  "pm.environment.set('checkout', plus(15));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.environment.set('negBookingId', pm.response.json().bookingid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-15 PUT sin token",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/{{negBookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{negBookingId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstname\": \"{{firstname}}\",\n  \"lastname\": \"{{lastname}}\",\n  \"totalprice\": {{totalprice}},\n  \"depositpaid\": true,\n  \"bookingdates\": {\n    \"checkin\": \"{{checkin}}\",\n    \"checkout\": \"{{checkout}}\"\n  },\n  \"additionalneeds\": \"Breakfast\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-16 PUT con token inválido",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "token=tokenfalso123"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/{{negBookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{negBookingId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstname\": \"{{firstname}}\",\n  \"lastname\": \"{{lastname}}\",\n  \"totalprice\": {{totalprice}},\n  \"depositpaid\": true,\n  \"bookingdates\": {\n    \"checkin\": \"{{checkin}}\",\n    \"checkout\": \"{{checkout}}\"\n  },\n  \"additionalneeds\": \"Breakfast\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-17 DELETE sin token",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/{{negBookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{negBookingId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-18 El booking sigue existiendo tras los intentos no autorizados",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/{{negBookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{negBookingId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('No fue modificado', () => pm.expect(pm.response.json().firstname).to.eql(pm.environment.get('firstname')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-19 Crear booking sin campos obligatorios",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lastname\": \"SinNombre\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('expect500', 'true');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Esperado ideal: 400 Bad Request. La API real devuelve 500 → defecto conocido.",
+                  "pm.test('Rechaza el request (no 2xx)', () => pm.expect(pm.response.code).to.be.oneOf([400, 500]));",
+                  "pm.test('No devuelve bookingid', () => pm.expect(pm.response.text()).to.not.include('bookingid'));",
+                  "if (pm.response.code === 500) { console.warn('DEFECTO: payload inválido devuelve 500 en vez de 400'); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-20 Crear booking con JSON mal formado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"firstname\": \"Roto\", ",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.set('expect500', 'true');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rechaza el request (400/500)', () => pm.expect(pm.response.code).to.be.oneOf([400, 500]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 - Casos de borde",
+      "item": [
+        {
+          "name": "TC-21 Nombre con tildes y ñ",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstname\": \"José Ñúñez\",\n  \"lastname\": \"{{lastname}}\",\n  \"totalprice\": {{totalprice}},\n  \"depositpaid\": true,\n  \"bookingdates\": {\n    \"checkin\": \"{{checkin}}\",\n    \"checkout\": \"{{checkout}}\"\n  },\n  \"additionalneeds\": \"Breakfast\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Datos de prueba dinámicos: cada corrida usa un nombre único",
+                  "const suffix = Date.now().toString().slice(-6);",
+                  "pm.environment.set('firstname', 'QA' + suffix);",
+                  "pm.environment.set('lastname', 'Tester');",
+                  "pm.environment.set('totalprice', 150);",
+                  "const today = new Date();",
+                  "const plus = (d) => new Date(today.getTime() + d * 86400000).toISOString().slice(0, 10);",
+                  "pm.environment.set('checkin', plus(10));",
+                  "pm.environment.set('checkout', plus(15));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Conserva caracteres especiales', () => pm.expect(pm.response.json().booking.firstname).to.eql('José Ñúñez'));",
+                  "pm.environment.set('edgeId1', pm.response.json().bookingid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-22 Precio total 0",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstname\": \"{{firstname}}\",\n  \"lastname\": \"{{lastname}}\",\n  \"totalprice\": 0,\n  \"depositpaid\": true,\n  \"bookingdates\": {\n    \"checkin\": \"{{checkin}}\",\n    \"checkout\": \"{{checkout}}\"\n  },\n  \"additionalneeds\": \"Breakfast\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Datos de prueba dinámicos: cada corrida usa un nombre único",
+                  "const suffix = Date.now().toString().slice(-6);",
+                  "pm.environment.set('firstname', 'QA' + suffix);",
+                  "pm.environment.set('lastname', 'Tester');",
+                  "pm.environment.set('totalprice', 150);",
+                  "const today = new Date();",
+                  "const plus = (d) => new Date(today.getTime() + d * 86400000).toISOString().slice(0, 10);",
+                  "pm.environment.set('checkin', plus(10));",
+                  "pm.environment.set('checkout', plus(15));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('totalprice = 0', () => pm.expect(pm.response.json().booking.totalprice).to.eql(0));",
+                  "pm.environment.set('edgeId2', pm.response.json().bookingid);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-23 Checkout anterior al checkin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstname\": \"{{firstname}}\",\n  \"lastname\": \"{{lastname}}\",\n  \"totalprice\": {{totalprice}},\n  \"depositpaid\": true,\n  \"bookingdates\": {\n    \"checkin\": \"2030-01-10\",\n    \"checkout\": \"2030-01-05\"\n  },\n  \"additionalneeds\": \"Breakfast\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Datos de prueba dinámicos: cada corrida usa un nombre único",
+                  "const suffix = Date.now().toString().slice(-6);",
+                  "pm.environment.set('firstname', 'QA' + suffix);",
+                  "pm.environment.set('lastname', 'Tester');",
+                  "pm.environment.set('totalprice', 150);",
+                  "const today = new Date();",
+                  "const plus = (d) => new Date(today.getTime() + d * 86400000).toISOString().slice(0, 10);",
+                  "pm.environment.set('checkin', plus(10));",
+                  "pm.environment.set('checkout', plus(15));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Regla de negocio esperada: debería rechazarse. Si la API lo acepta, se registra como defecto.",
+                  "pm.test('Responde sin error de servidor', () => pm.expect(pm.response.code).to.be.below(500));",
+                  "if (pm.response.code === 200) {",
+                  "    console.warn('DEFECTO: la API acepta checkout anterior al checkin');",
+                  "    pm.environment.set('edgeId3', pm.response.json().bookingid);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-24 Filtro sin resultados",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking?firstname=NoExiste_zzz_{{$timestamp}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "query": [
+                {
+                  "key": "firstname",
+                  "value": "NoExiste_zzz_{{$timestamp}}"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Devuelve lista vacía (no error)', () => pm.expect(pm.response.json()).to.be.an('array').that.is.empty);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "99 - Limpieza de datos",
+      "item": [
+        {
+          "name": "Borrar negBookingId",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "token={{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/{{negBookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{negBookingId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Si la variable no existe se saltea el borrado",
+                  "if (!pm.environment.get('negBookingId')) { pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Borrado OK (201)', () => pm.response.to.have.status(201));",
+                  "pm.environment.unset('negBookingId');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Borrar edgeId1",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "token={{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/{{edgeId1}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{edgeId1}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Si la variable no existe se saltea el borrado",
+                  "if (!pm.environment.get('edgeId1')) { pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Borrado OK (201)', () => pm.response.to.have.status(201));",
+                  "pm.environment.unset('edgeId1');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Borrar edgeId2",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "token={{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/{{edgeId2}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{edgeId2}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Si la variable no existe se saltea el borrado",
+                  "if (!pm.environment.get('edgeId2')) { pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Borrado OK (201)', () => pm.response.to.have.status(201));",
+                  "pm.environment.unset('edgeId2');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Borrar edgeId3",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "token={{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/{{edgeId3}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{edgeId3}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Si la variable no existe se saltea el borrado",
+                  "if (!pm.environment.get('edgeId3')) { pm.execution.skipRequest(); }"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Borrado OK (201)', () => pm.response.to.have.status(201));",
+                  "pm.environment.unset('edgeId3');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
