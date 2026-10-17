@@ -1,7 +1,39 @@
-.github/
-   workflows/
-      postman-tests.yml
-postman/
-   restful-booker.postman_collection.json
-   restful-booker.postman_environment.json
-README.md
+name: Postman API Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  api-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar Newman
+        run: npm install -g newman newman-reporter-htmlextra
+
+      - name: Ejecutar colección de Postman
+        run: |
+          newman run "Coleccion/restful-booker.postman_collection.json" \
+            -e "Coleccion/restful-booker.postman_environment.json" \
+            --reporters cli,htmlextra,junit \
+            --reporter-htmlextra-export reports/report.html \
+            --reporter-junit-export reports/report.xml
+
+      - name: Subir reportes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: newman-reports
+          path: reports/
